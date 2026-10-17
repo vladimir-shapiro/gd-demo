@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gradient descent: learning rate explorer</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Core theme + layout live here (not only in Tailwind) so the page still works offline */
+  :root {
+    --bg: #eef3f6;
+    --panel: #ffffff;
+    --ink: #1a2a38;
+    --muted: #5b6d7c;
+    --line: #d3dde4;
+    --grid: #dfe7ec;
+    --curve: #2e5f80;
+    --ball: #e3a018;
+    --ball-edge: #9a6a05;
+    --warn: #c0395a;
+    --good: #2f8a5f;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12202b; --panel: #1a2b38; --ink: #e3ecf2; --muted: #9db0bf;
+      --line: #2c4152; --grid: #203342; --curve: #7fb4d6; --ball: #f2b53f;
+      --ball-edge: #b07d12; --warn: #ef6f8c; --good: #5cc290; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12202b; --panel: #1a2b38; --ink: #e3ecf2; --muted: #9db0bf;
+    --line: #2c4152; --grid: #203342; --curve: #7fb4d6; --ball: #f2b53f;
+    --ball-edge: #b07d12; --warn: #ef6f8c; --good: #5cc290; color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    height: 100%; margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-feature-settings: "tnum" 1;
+    overflow: hidden;
+  }
+  .app {
+    height: 100%; display: grid; gap: 16px; padding: 16px;
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .canvas-wrap { position: relative; flex: 1; min-height: 220px; }
+  .canvas-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: block; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; display: flex; flex-direction: column; gap: 11px;
+    overflow-y: auto; min-height: 0;
+  }
+  .eta { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  .eta small { font-size: 22px; font-weight: 500; color: var(--muted); margin-right: 6px; }
+  .muted { color: var(--muted); }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; background: transparent; height: 28px; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--line); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--line); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 24px; height: 24px; margin-top: -9px; border-radius: 50%;
+    background: var(--ball); border: 2px solid var(--ball-edge);
+  }
+  input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--ball); border: 2px solid var(--ball-edge); }
+  input[type=range]:focus-visible { outline: 2px solid var(--curve); outline-offset: 2px; border-radius: 4px; }
+
+  .btn {
+    font: inherit; font-weight: 600; font-size: 15px; color: var(--ink);
+    background: transparent; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 9px 12px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--curve); }
+  .btn:focus-visible { outline: 2px solid var(--curve); outline-offset: 2px; }
+  .btn-primary { background: var(--curve); border-color: var(--curve); color: var(--panel); }
+  .preset { font-size: 13px; padding: 7px 8px; font-weight: 500; text-align: left; }
+  .preset[aria-pressed="true"] { border-color: var(--ball); background: color-mix(in srgb, var(--ball) 16%, transparent); }
+  .preset b { display: block; font-weight: 700; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid3 { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 8px; }
+  .stat dt { font-size: 12px; color: var(--muted); }
+  .stat dd { margin: 0; font-size: 18px; font-weight: 700; }
+  .update {
+    font-size: 14px; border-left: 3px solid var(--ball); padding: 4px 0 4px 10px; line-height: 1.5;
+  }
+  .status { font-size: 14px; line-height: 1.4; min-height: 2.8em; margin: 0; }
+  .status[data-tone="warn"] { color: var(--warn); }
+  .status[data-tone="good"] { color: var(--good); }
+  #history { width: 100%; height: 72px; display: block; }
+  kbd { font: inherit; font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+  /* Fallbacks for the Tailwind utilities used, in case the CDN can't load (e.g. offline in PowerPoint) */
+  .flex { display: flex; } .justify-between { justify-content: space-between; }
+  .text-xs { font-size: 12px; line-height: 16px; } .text-sm { font-size: 14px; line-height: 20px; }
+  .text-2xl { font-size: 24px; line-height: 32px; } .font-semibold { font-weight: 600; }
+  .font-extrabold { font-weight: 800; } .tracking-tight { letter-spacing: -0.025em; }
+  .mt-1 { margin-top: 4px; } .mb-1 { margin-bottom: 4px; } .mb-2 { margin-bottom: 8px; } .px-1 { padding-left: 4px; padding-right: 4px; }
+  h1, p { margin: 0; }
+  @media (min-width: 768px) { .md\:text-3xl { font-size: 30px; line-height: 36px; } }
+
+  @media (max-width: 760px) {
+    body { overflow: auto; }
+    .app { grid-template-columns: 1fr; height: auto; }
+    .canvas-wrap { min-height: 340px; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage">
+    <header class="mb-2 px-1">
+      <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">How the learning rate moves the ball</h1>
+      <p class="muted text-sm mt-1">Each step slides the weight downhill by the learning rate times the slope. Click the curve to choose where the ball starts.</p>
+    </header>
+    <div class="canvas-wrap">
+      <canvas id="surface" aria-label="Loss curve with a ball showing gradient descent" role="img"></canvas>
+    </div>
+  </section>
+
+  <aside class="panel" aria-label="Controls">
+    <div>
+      <label for="lr" class="text-sm font-semibold">Learning rate</label>
+      <div class="eta mt-1" aria-live="polite"><small>η =</small><span id="lrValue">0.050</span></div>
+      <input id="lr" type="range" min="0" max="1000" step="1" aria-describedby="lrHint">
+      <div id="lrHint" class="flex justify-between text-xs muted"><span>0.001</span><span>0.01</span><span>0.1</span><span>1</span></div>
+    </div>
+
+    <div class="grid2" role="group" aria-label="Learning rate presets">
+      <button class="btn preset" data-lr="0.003"><b>Too small</b>crawls for ages</button>
+      <button class="btn preset" data-lr="0.05"><b>Steady</b>settles cleanly</button>
+      <button class="btn preset" data-lr="0.35"><b>Bold</b>can hop a hill</button>
+      <button class="btn preset" data-lr="0.7"><b>Too large</b>blows up</button>
+    </div>
+
+    <div class="grid3">
+      <button id="play" class="btn btn-primary">Play</button>
+      <button id="step" class="btn">Step</button>
+      <button id="reset" class="btn">Reset</button>
+    </div>
+
+    <div>
+      <label for="speed" class="text-sm font-semibold">Steps per second: <span id="speedValue">4</span></label>
+      <input id="speed" type="range" min="1" max="30" step="1" value="4">
+    </div>
+
+    <div class="update" id="update" aria-live="polite"></div>
+
+    <dl class="grid2" style="margin:0">
+      <div class="stat"><dt>Step</dt><dd id="sStep">0</dd></div>
+      <div class="stat"><dt>Loss</dt><dd id="sLoss">–</dd></div>
+      <div class="stat"><dt>Weight w</dt><dd id="sW">–</dd></div>
+      <div class="stat"><dt>Slope dL/dw</dt><dd id="sG">–</dd></div>
+    </dl>
+
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <div>
+      <div class="text-xs muted mb-1">Loss over steps (dashed line: lowest possible loss)</div>
+      <canvas id="history" aria-hidden="true"></canvas>
+    </div>
+
+    <p class="text-xs muted">Keys: <kbd>Space</kbd> play/pause, <kbd>→</kbd> step, <kbd>R</kbd> reset, <kbd>1</kbd>–<kbd>4</kbd> presets</p>
+  </aside>
+</main>
+
+<script>
+(() => {
+  // ---------- The loss function: two valleys of different depth ----------
+  const f  = w => 0.1 * w ** 4 - w * w + 0.4 * w + 3;
+  const df = w => 0.4 * w ** 3 - 2 * w + 0.4;
+  const newton = x => { for (let i = 0; i < 50; i++) x -= df(x) / (1.2 * x * x - 2); return x; };
+  const W_GLOBAL = newton(-2.3), W_LOCAL = newton(2.1);
+  const L_GLOBAL = f(W_GLOBAL);
+
+  const VIEW = { xMin: -4.2, xMax: 4.2, yMin: -1.6, yMax: 9.6 };
+  const LR_MIN = 0.001, LR_MAX = 1.0, MAX_STEPS = 2000, ESCAPE = 40;
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const cv = $('surface'), ctx = cv.getContext('2d');
+  const hv = $('history'), hctx = hv.getContext('2d');
+  const lrInput = $('lr'), speedInput = $('speed');
+  const presets = [...document.querySelectorAll('.preset')];
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- State ----------
+  const S = {
+    lr: 0.05, sps: 4, w0: 3.6, w: 3.6,
+    trail: [], losses: [], steps: 0,
+    running: false, anim: null, done: null  // done: 'global' | 'local' | 'diverged' | 'stalled'
+  };
+
+  // ---------- Helpers ----------
+  const sliderToLr = v => Math.pow(10, Math.log10(LR_MIN) + (v / 1000) * (Math.log10(LR_MAX) - Math.log10(LR_MIN)));
+  const lrToSlider = lr => Math.round(1000 * (Math.log10(lr) - Math.log10(LR_MIN)) / (Math.log10(LR_MAX) - Math.log10(LR_MIN)));
+  const fmtLr = lr => lr < 0.01 ? lr.toFixed(4) : lr < 0.1 ? lr.toFixed(3) : lr.toFixed(2);
+  const fmt = (x, d = 2) => Math.abs(x) < 0.5 * 10 ** -d ? (0).toFixed(d) : !isFinite(x) ? '∞' : Math.abs(x) >= 1e4 ? x.toExponential(1).replace('-', '−') : x.toFixed(d).replace('-', '−');
+  const sign = x => x < 0 ? '−' : '+';
+  let C = {};
+  const readColors = () => {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg','panel','ink','muted','line','grid','curve','ball','ball-edge','warn','good']) C[k] = cs.getPropertyValue('--' + k).trim();
+  };
+
+  // ---------- Canvas sizing ----------
+  let W = 0, H = 0, HW = 0, HH = 0, dpr = 1;
+  const PAD = { l: 52, r: 18, t: 16, b: 40 };
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const r = cv.getBoundingClientRect(); W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    const hr = hv.getBoundingClientRect(); HW = hr.width; HH = hr.height;
+    hv.width = Math.round(HW * dpr); hv.height = Math.round(HH * dpr);
+    draw();
+  }
+  const sx = w => PAD.l + (w - VIEW.xMin) / (VIEW.xMax - VIEW.xMin) * (W - PAD.l - PAD.r);
+  const sy = l => PAD.t + (1 - (l - VIEW.yMin) / (VIEW.yMax - VIEW.yMin)) * (H - PAD.t - PAD.b);
+  const xToW = x => VIEW.xMin + (x - PAD.l) / (W - PAD.l - PAD.r) * (VIEW.xMax - VIEW.xMin);
+  const ballR = () => Math.max(9, Math.min(16, W / 70));
+
+  // Ball center sitting on the curve, offset along the surface normal
+  function ballCenter(w, lift = 0) {
+    const kx = (W - PAD.l - PAD.r) / (VIEW.xMax - VIEW.xMin);
+    const ky = (H - PAD.t - PAD.b) / (VIEW.yMax - VIEW.yMin);
+    const m = -df(w) * ky / kx;           // pixel slope (y grows downward)
+    const n = Math.hypot(m, 1);
+    const r = ballR();
+    return { x: sx(w) + r * m / n, y: sy(f(w)) - r / n - lift };
+  }
+
+  // ---------- Simulation ----------
+  function reset(w0 = S.w0) {
+    S.w0 = w0; S.w = w0; S.steps = 0; S.done = null; S.anim = null;
+    S.trail = [w0]; S.losses = [f(w0)];
+    setRunning(false); updateUI(); draw();
+  }
+
+  function startStep() {
+    if (S.done || S.anim) return;
+    const g = df(S.w);
+    const next = S.w - S.lr * g;
+    const dur = reduceMotion ? 0 : Math.max(30, 1000 / S.sps * 0.9);
+    S.anim = { from: S.w, to: next, t0: performance.now(), dur };
+    if (dur === 0) finishStep();
+  }
+
+  function finishStep() {
+    const { from, to } = S.anim; S.anim = null;
+    S.w = to; S.steps++;
+    if (!isFinite(to) || Math.abs(to) > ESCAPE) {
+      S.done = 'diverged'; setRunning(false);
+    } else {
+      S.trail.push(to); if (S.trail.length > 60) S.trail.shift();
+      S.losses.push(f(to)); if (S.losses.length > 400) S.losses.shift();
+      if (Math.abs(to - from) < 1e-4 && Math.abs(df(to)) < 1e-3) {
+        S.done = Math.abs(to - W_GLOBAL) < 0.2 ? 'global' : 'local'; setRunning(false);
+      } else if (S.steps >= MAX_STEPS) {
+        S.done = 'stalled'; setRunning(false);
+      }
+    }
+    updateUI();
+  }
+
+  function isOscillating() {
+    const t = S.trail; if (t.length < 5) return false;
+    const d = []; for (let i = t.length - 4; i < t.length; i++) d.push(t[i] - t[i - 1]);
+    const alternates = d.every((x, i) => i === 0 || Math.sign(x) !== Math.sign(d[i - 1]));
+    return alternates && Math.abs(d[3]) > 0.05;
+  }
+
+  // ---------- UI text ----------
+  function updateUI() {
+    $('lrValue').textContent = fmtLr(S.lr);
+    presets.forEach(b => b.setAttribute('aria-pressed', Math.abs(+b.dataset.lr - S.lr) / S.lr < 0.02 ? 'true' : 'false'));
+    $('sStep').textContent = S.steps.toLocaleString();
+    const ok = isFinite(S.w) && Math.abs(S.w) <= ESCAPE;
+    $('sW').textContent = ok ? fmt(S.w) : 'off the chart';
+    $('sLoss').textContent = ok ? fmt(f(S.w)) : '∞';
+    $('sG').textContent = ok ? fmt(df(S.w)) : '–';
+
+    const upd = $('update');
+    if (ok && !S.done) {
+      const g = df(S.w), next = S.w - S.lr * g;
+      upd.innerHTML = `Next update<br><b>w ← ${fmt(S.w)} ${sign(-g)} ${fmtLr(S.lr)} × ${fmt(Math.abs(g))} = ${fmt(next)}</b>`;
+    } else {
+      upd.innerHTML = 'Next update<br><b>w ← w − η × dL/dw</b>';
+    }
+
+    const st = $('status'); let msg = '', tone = '';
+    if (S.done === 'diverged') { msg = 'Diverged. Every step overshoots further than the last, so the loss explodes. Lower the learning rate and press Reset.'; tone = 'warn'; }
+    else if (S.done === 'global') { msg = `Settled at the lowest point on the curve after ${S.steps.toLocaleString()} steps.`; tone = 'good'; }
+    else if (S.done === 'local') { msg = `Settled in the shallower valley after ${S.steps.toLocaleString()} steps. The slope is zero here, so gradient descent can’t see the deeper valley.`; tone = 'good'; }
+    else if (S.done === 'stalled') { msg = `Still crawling after ${MAX_STEPS.toLocaleString()} steps. Raise the learning rate to cover ground faster.`; tone = 'warn'; }
+    else if (S.steps === 0) msg = 'Press Play to run, or Step to move one update at a time.';
+    else if (isOscillating()) { msg = 'Overshooting: each step jumps past the bottom of the valley.'; tone = 'warn'; }
+    else msg = S.lr < 0.01 ? 'Descending, slowly. Small steps are safe but expensive.' : 'Descending.';
+    st.textContent = msg; st.dataset.tone = tone;
+  }
+
+  function setRunning(on) {
+    S.running = on && !S.done;
+    $('play').textContent = S.running ? 'Pause' : 'Play';
+  }
+
+  // ---------- Drawing ----------
+  function arrow(c, x1, y1, x2, y2, color, width = 2) {
+    c.strokeStyle = color; c.fillStyle = color; c.lineWidth = width;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+    const a = Math.atan2(y2 - y1, x2 - x1), h = 9;
+    c.beginPath(); c.moveTo(x2, y2);
+    c.lineTo(x2 - h * Math.cos(a - 0.45), y2 - h * Math.sin(a - 0.45));
+    c.lineTo(x2 - h * Math.cos(a + 0.45), y2 - h * Math.sin(a + 0.45));
+    c.closePath(); c.fill();
+  }
+
+  function draw() {
+    if (!W) return;
+    const c = ctx; c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, H);
+    const plotB = H - PAD.b;
+
+    // grid + axis labels
+    c.font = '12px "Schibsted Grotesk", system-ui, sans-serif';
+    c.textBaseline = 'middle'; c.textAlign = 'right';
+    for (let l = 0; l <= 9; l += 2) {
+      const y = sy(l);
+      c.strokeStyle = C.grid; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(PAD.l, y); c.lineTo(W - PAD.r, y); c.stroke();
+      c.fillStyle = C.muted; c.fillText(l, PAD.l - 8, y);
+    }
+    c.textAlign = 'center'; c.textBaseline = 'top';
+    for (let w = -4; w <= 4; w += 2) c.fillText(String(w).replace('-', '−'), sx(w), plotB + 6);
+    c.fillText('weight w', (PAD.l + W - PAD.r) / 2, plotB + 22);
+    c.save(); c.translate(14, (PAD.t + plotB) / 2); c.rotate(-Math.PI / 2); c.textBaseline = 'middle';
+    c.fillText('loss L(w)', 0, 0); c.restore();
+
+    // curve + fill
+    c.save(); c.beginPath(); c.rect(PAD.l, PAD.t, W - PAD.l - PAD.r, plotB - PAD.t); c.clip();
+    const N = Math.max(200, Math.floor(W));
+    const path = new Path2D();
+    for (let i = 0; i <= N; i++) {
+      const w = VIEW.xMin + (i / N) * (VIEW.xMax - VIEW.xMin);
+      const x = sx(w), y = sy(f(w));
+      i ? path.lineTo(x, y) : path.moveTo(x, y);
+    }
+    const fill = new Path2D(path); fill.lineTo(sx(VIEW.xMax), plotB); fill.lineTo(sx(VIEW.xMin), plotB); fill.closePath();
+    const grad = c.createLinearGradient(0, PAD.t, 0, plotB);
+    grad.addColorStop(0, C.curve + '00'); grad.addColorStop(1, C.curve + '33');
+    c.fillStyle = grad; c.fill(fill);
+    c.strokeStyle = C.curve; c.lineWidth = 3; c.lineJoin = 'round'; c.stroke(path);
+
+    // valley labels
+    c.fillStyle = C.muted; c.font = '13px "Schibsted Grotesk", system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'top';
+    c.fillText('deepest valley', sx(W_GLOBAL), sy(f(W_GLOBAL)) + 10);
+    c.fillText('shallower valley', sx(W_LOCAL), sy(f(W_LOCAL)) + 10);
+
+    // trail: chords between successive positions show the discrete jumps
+    const t = S.trail, n = t.length;
+    for (let i = 1; i < n; i++) {
+      const a = Math.pow(i / n, 1.5);
+      c.strokeStyle = C['ball-edge']; c.globalAlpha = 0.2 + 0.6 * a; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(sx(t[i - 1]), sy(f(t[i - 1]))); c.lineTo(sx(t[i]), sy(f(t[i]))); c.stroke();
+    }
+    for (let i = 0; i < n - 1; i++) {
+      c.globalAlpha = 0.3 + 0.7 * Math.pow((i + 1) / n, 1.5);
+      c.fillStyle = C.ball; c.strokeStyle = C['ball-edge']; c.lineWidth = 1;
+      c.beginPath(); c.arc(sx(t[i]), sy(f(t[i])), 4.5, 0, Math.PI * 2); c.fill(); c.stroke();
+    }
+    c.globalAlpha = 1;
+
+    // ball position (animated hop between steps)
+    let bw = S.w, lift = 0, live = isFinite(S.w) && Math.abs(S.w) <= ESCAPE;
+    if (S.anim) {
+      const p = Math.min(1, (performance.now() - S.anim.t0) / S.anim.dur);
+      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      const from = S.anim.from, to = isFinite(S.anim.to) ? S.anim.to : Math.sign(S.anim.to || 1) * 1e3;
+      bw = from + (to - from) * e;
+      lift = Math.min(160, Math.abs(sx(to) - sx(from)) * 0.25) * Math.sin(Math.PI * p);
+      // blend the vertical path linearly between start and landing so jumps read as jumps
+      const c0 = ballCenter(from), c1 = ballCenter(Math.max(-ESCAPE, Math.min(ESCAPE, to)));
+      const cx = c0.x + (c1.x - c0.x) * e, cy = c0.y + (c1.y - c0.y) * e - lift;
+      drawBall(c, cx, cy); live = false;
+    }
+
+    if (!S.anim && live) {
+      // tangent line showing the slope
+      const g = df(S.w), x0 = sx(S.w), y0 = sy(f(S.w)), dw = 0.7;
+      c.setLineDash([5, 5]); c.strokeStyle = C.ink; c.globalAlpha = 0.45; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(sx(S.w - dw), sy(f(S.w) - g * dw)); c.lineTo(sx(S.w + dw), sy(f(S.w) + g * dw)); c.stroke();
+      c.setLineDash([]); c.globalAlpha = 1;
+
+      // planned step: horizontal arrow of length η·|slope|, then drop to the curve
+      if (!S.done) {
+        const next = S.w - S.lr * g;
+        const xn = Math.max(PAD.l, Math.min(W - PAD.r, sx(next)));
+        const yb = ballCenter(S.w).y - ballR() - 14;
+        if (Math.abs(xn - x0) > 4) arrow(c, x0, yb, xn, yb, C.ink, 2);
+        if (isFinite(next) && next > VIEW.xMin && next < VIEW.xMax) {
+          c.setLineDash([2, 4]); c.strokeStyle = C.ink; c.globalAlpha = 0.5;
+          c.beginPath(); c.moveTo(xn, yb); c.lineTo(xn, sy(f(next))); c.stroke();
+          c.setLineDash([]); c.globalAlpha = 0.6;
+          c.strokeStyle = C.ball; c.lineWidth = 2; c.beginPath(); c.arc(xn, sy(f(next)), 6, 0, Math.PI * 2); c.stroke();
+          c.globalAlpha = 1;
+        }
+        c.fillStyle = C.ink; c.font = '600 13px "Schibsted Grotesk", system-ui, sans-serif';
+        c.textAlign = 'center'; c.textBaseline = 'bottom';
+        c.fillText(`step = η × slope = ${fmt(Math.abs(S.lr * g), 3)}`, Math.max(PAD.l + 90, Math.min(W - PAD.r - 90, (x0 + xn) / 2)), yb - 6);
+      }
+      const b = ballCenter(S.w); drawBall(c, b.x, b.y);
+    }
+    c.restore();
+
+    if (S.done === 'diverged') {
+      c.fillStyle = C.warn; c.font = '700 20px "Schibsted Grotesk", system-ui, sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'top';
+      c.fillText('The ball left the chart: training diverged', (PAD.l + W - PAD.r) / 2, PAD.t + 10);
+    }
+    drawHistory();
+  }
+
+  function drawBall(c, x, y) {
+    const r = ballR();
+    const g = c.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.15, x, y, r);
+    g.addColorStop(0, '#fff6dc'); g.addColorStop(0.35, C.ball); g.addColorStop(1, C['ball-edge']);
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+  }
+
+  function drawHistory() {
+    if (!HW) return;
+    const c = hctx; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, HW, HH);
+    const L = S.losses; if (!L.length) return;
+    const lo = Math.min(L_GLOBAL, ...L) - 0.3, hi = Math.max(lo + 1, Math.min(30, Math.max(...L))) + 0.3;
+    const px = i => 4 + (L.length < 2 ? 0 : i / (L.length - 1)) * (HW - 8);
+    const py = v => 4 + (1 - (Math.min(v, hi) - lo) / (hi - lo)) * (HH - 8);
+    c.strokeStyle = C.line; c.lineWidth = 1; c.strokeRect(0.5, 0.5, HW - 1, HH - 1);
+    c.setLineDash([4, 4]); c.strokeStyle = C.good; c.beginPath(); c.moveTo(4, py(L_GLOBAL)); c.lineTo(HW - 4, py(L_GLOBAL)); c.stroke(); c.setLineDash([]);
+    c.strokeStyle = S.done === 'diverged' ? C.warn : C.ball; c.lineWidth = 2; c.beginPath();
+    L.forEach((v, i) => i ? c.lineTo(px(i), py(v)) : c.moveTo(px(i), py(v))); c.stroke();
+  }
+
+  // ---------- Loop ----------
+  function frame(now) {
+    if (S.anim && now - S.anim.t0 >= S.anim.dur) finishStep();
+    if (S.running && !S.anim && !S.done) startStep();
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Events ----------
+  function setLr(lr) { S.lr = Math.max(LR_MIN, Math.min(LR_MAX, lr)); lrInput.value = lrToSlider(S.lr); updateUI(); }
+  lrInput.addEventListener('input', () => { S.lr = sliderToLr(+lrInput.value); updateUI(); });
+  speedInput.addEventListener('input', () => { S.sps = +speedInput.value; $('speedValue').textContent = S.sps; });
+  presets.forEach(b => b.addEventListener('click', () => setLr(+b.dataset.lr)));
+  $('play').addEventListener('click', () => {
+    if (S.done) reset();
+    setRunning(!S.running);
+  });
+  $('step').addEventListener('click', () => { if (S.done) return; setRunning(false); startStep(); });
+  $('reset').addEventListener('click', () => reset());
+  cv.addEventListener('click', e => {
+    const r = cv.getBoundingClientRect();
+    const w = xToW(e.clientX - r.left);
+    reset(Math.max(-4, Math.min(4, w)));
+  });
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+    if (e.key === ' ') { e.preventDefault(); $('play').click(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); $('step').click(); }
+    else if (e.key === 'r' || e.key === 'R') reset();
+    else if (/^[1-4]$/.test(e.key)) presets[+e.key - 1].click();
+  });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); draw(); });
+  new ResizeObserver(resize).observe(cv);
+
+  // ---------- Start ----------
+  readColors();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+  setLr(0.05);
+  reset(3.6);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
